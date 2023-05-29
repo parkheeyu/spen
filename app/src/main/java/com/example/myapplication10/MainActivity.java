@@ -21,6 +21,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.AttributeSet;
+import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
@@ -37,6 +38,7 @@ import androidx.core.content.ContextCompat;
 import androidx.core.app.ActivityCompat;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
@@ -48,6 +50,7 @@ public class MainActivity extends AppCompatActivity {
 
     private float pressureValue = 0.0f;
     private static final int WRITE_REQUEST_CODE = 1001;
+    private static final int IMAGE_SAVE_REQUEST_CODE = 1002;
 
 
     @Override
@@ -118,9 +121,9 @@ public class MainActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         fileParams.gravity = Gravity.CENTER_VERTICAL | Gravity.LEFT; // 수정된 부분
-        fileParams.rightMargin = loadButton.getWidth() + 20; // 수정된 부분
         fileParams.bottomMargin = 550;
-        fileParams.leftMargin = 600; // 마진 추가
+        fileParams.rightMargin = loadButton.getRight();
+        fileParams.leftMargin = 200;
         fileView.setLayoutParams(fileParams);
 
         frameLayout.addView(fileView);
@@ -184,67 +187,102 @@ public class MainActivity extends AppCompatActivity {
 
 
         saveButton.setOnClickListener(new View.OnClickListener() {
+
+
             @Override
             public void onClick(View v) {
                 try {
+                    // CanvasView에서 그려진 그림을 가져옵니다.
+                        Intent saveImageIntent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                        saveImageIntent.addCategory(Intent.CATEGORY_OPENABLE);
+                        saveImageIntent.setType("image/png");
+                        saveImageIntent.putExtra(Intent.EXTRA_TITLE, ncs + "_" + genuine + "_" + num);
+
+                        startActivityForResult(saveImageIntent, IMAGE_SAVE_REQUEST_CODE);
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    Toast.makeText(getApplicationContext(), "이미지 저장 중 오류가 발생했습니다.", Toast.LENGTH_SHORT).show();
+                }
+                try {
+
+
                     Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                     intent.addCategory(Intent.CATEGORY_OPENABLE);
                     intent.setType("text/plain");
-                    intent.putExtra(Intent.EXTRA_TITLE, "pressure.txt");
+                    intent.putExtra(Intent.EXTRA_TITLE, ncs + "_" + genuine + "_" + num );
                     startActivityForResult(intent, WRITE_REQUEST_CODE);
+
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
+
             }
         });
 
         setContentView(frameLayout);
     }
 
-
     // onActivityResult 메소드에서 선택한 이미지를 가져와서 캔버스에 그려줍니다.
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        Uri uri = data.getData();
-        if (uri != null) {
-            try {
-                OutputStream outputStream = getContentResolver().openOutputStream(uri);
-                if (outputStream != null) {
-                    String filename = "pressure.txt";
-                    pressureValue = canvasView.getLastPressure();
-                    String content = "Pressure: " + pressureValue;
-                    outputStream.write(content.getBytes());
-                    outputStream.close();
-                    Toast.makeText(getApplicationContext(), "필압 값이 저장되었습니다.", Toast.LENGTH_SHORT).show();
+
+        if (resultCode == RESULT_OK) {
+            if (requestCode == IMAGE_SAVE_REQUEST_CODE) {
+                // 이미지 저장 결과 처리
+                Uri imageUri = data.getData();
+                if (imageUri != null) {
+                    try {
+                        Bitmap canvasBitmap = canvasView.getCanvasBitmap();
+                        OutputStream outputStream = getContentResolver().openOutputStream(imageUri);
+                        if (outputStream != null) {
+                            outputStream.close();
+                            canvasBitmap.compress(Bitmap.CompressFormat.PNG, 80, outputStream);
+                            outputStream.close();
+                            Toast.makeText(getApplicationContext(), "이미지가 저장되었습니다.", Toast.LENGTH_SHORT).show();}
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                        Toast.makeText(getApplicationContext(), "이미지 저장 중 오류가 발생했습니다.", Toast.LENGTH_SHORT).show();
+                    }
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
+            } else if (requestCode == WRITE_REQUEST_CODE) {
+                Uri uri = data.getData();
+                if (uri != null) {
+                    try {
+                        OutputStream outputStream = getContentResolver().openOutputStream(uri);
+                        if (outputStream != null) {
+                            String filename = "pressure.txt";
+                            pressureValue = canvasView.getLastPressure();
+                            String content = "Pressure: " + pressureValue;
+                            outputStream.write(content.getBytes());
+                            outputStream.close();
+                            Toast.makeText(getApplicationContext(), "필압 값이 저장되었습니다.", Toast.LENGTH_SHORT).show();
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            } else if (requestCode == 1) {
+                try {
+                    // 선택한 이미지를 Bitmap으로 가져옵니다.
+                    InputStream inputStream = getContentResolver().openInputStream(data.getData());
+                    Bitmap imageBitmap = BitmapFactory.decodeStream(inputStream);
+                    inputStream.close();
+
+                    // 가져온 이미지를 캔버스에 그려줍니다.
+                    canvasView.drawImage(imageBitmap);
+                    // 캔버스 뷰를 업데이트합니다.
+                    canvasView.invalidate();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
-        }
-        if (resultCode == RESULT_OK && requestCode == 1) {
-            try {
-
-                // 선택한 이미지를 Bitmap으로 가져옵니다.
-                InputStream inputStream = getContentResolver().openInputStream(data.getData());
-                Bitmap imageBitmap = BitmapFactory.decodeStream(inputStream);
-                inputStream.close();
-
-                // 가져온 이미지를 캔버스에 그려줍니다.
-                canvasView.drawImage(imageBitmap);
-                // 캔버스 뷰를 업데이트합니다.
-                canvasView.invalidate();
-
-
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
         }
     }
 
 
-    private static class CanvasView extends View {
+    private class CanvasView extends View {
         private Path path = new Path();
         private Paint paint = new Paint();
         private float lastX, lastY;
@@ -264,6 +302,7 @@ public class MainActivity extends AppCompatActivity {
 
 
         public CanvasView(Context context) {
+
             super(context);
 
             mPath = new Path();
@@ -272,7 +311,7 @@ public class MainActivity extends AppCompatActivity {
             paint.setColor(Color.BLACK);
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeJoin(Paint.Join.ROUND);
-            paint.setStrokeWidth(10f);
+            //paint.setStrokeWidth(10f);
 
             mPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             mPaint.setStyle(Paint.Style.STROKE);
@@ -282,6 +321,10 @@ public class MainActivity extends AppCompatActivity {
             mPaint.setStrokeWidth(10);
 
 
+
+        }
+        public float getLastPressure() {
+            return mLastPressure;
         }
 
         public CanvasView(Context context, AttributeSet attrs, int defStyle) {
@@ -312,9 +355,6 @@ public class MainActivity extends AppCompatActivity {
 
         }
 
-        public float getLastPressure() {
-            return mLastPressure;
-        }
 
 
         @Override
@@ -323,9 +363,11 @@ public class MainActivity extends AppCompatActivity {
 
             // 정사각형 박스
             paint.setColor(Color.LTGRAY);
+            paint.setStrokeWidth(10f);
             canvas.drawRect(boxRect, paint);
             //그림 그리기
             mPaint.setColor(Color.BLACK);
+            mPaint.setStrokeWidth(calculateStrokeWidth(mLastPressure));
             canvas.drawPath(mPath, mPaint);
 
 
@@ -380,49 +422,82 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            float x = event.getX();
-            float y = event.getY();
-            float pressure = event.getPressure();
+            int pointerCount = event.getPointerCount();
 
-            switch (event.getAction()) {
-                case MotionEvent.ACTION_DOWN:
-                    // 박스 내부를 터치했는지 확인합니다.
-                    if (boxRect.contains(x, y)) {
-                        mPath.moveTo(x, y);
+            for (int i = 0; i < pointerCount; i++) {
+                float x = event.getX(i);
+                float y = event.getY(i);
+                float pressure = event.getPressure(i);
+
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                    case MotionEvent.ACTION_POINTER_DOWN:
+                        // 박스 내부를 터치했는지 확인합니다.
+                        if (boxRect.contains(x, y)) {
+                            mPath.moveTo(x, y);
+                            lastX = x;
+                            lastY = y;
+                            return true;
+                        }
+                        break;
+
+                    case MotionEvent.ACTION_MOVE:
+                        // 박스 내부에서만 그리도록 합니다.
+                        if (!boxRect.contains(x, y)) {
+                            break;
+                        }
+
+                        int historySize = event.getHistorySize();
+                        for (int h = 0; h < historySize; h++) {
+                            float historicalX = event.getHistoricalX(i, h);
+                            float historicalY = event.getHistoricalY(i, h);
+                            float historicalPressure = event.getHistoricalPressure(i, h);
+
+                            // 필압 값 갱신
+                            mLastPressure = historicalPressure;
+
+                            mPath.quadTo(lastX, lastY, historicalX, historicalY);
+                            lastX = historicalX;
+                            lastY = historicalY;
+                        }
+
+                        // 필압 값 갱신
+                        mLastPressure = pressure;
+
+                        mPath.quadTo(lastX, lastY, x, y);
                         lastX = x;
                         lastY = y;
-                        mPaint.setStrokeWidth(pressure * 20);
-                        mPath.moveTo(event.getX(), event.getY());
-                        return true;
-                    }
 
-
-                case MotionEvent.ACTION_MOVE:
-                    // 박스 내부에서만 그리도록 합니다.
-                    if (!boxRect.contains(x, y)) {
+                        invalidate();
                         break;
-                    }
-                    int historySize = event.getHistorySize();
-                    for (int i = 0; i < historySize; i++) {
-                        float historicalX = event.getHistoricalX(i);
-                        float historicalY = event.getHistoricalY(i);
-                        if (boxRect.contains(historicalX, historicalY)) {
-                            mPath.lineTo(historicalX, historicalY);
-                        }
-                    }
-                    mPath.lineTo(x, y);
-                    mPaint.setStrokeWidth(pressure * 20);
-                    break;
-
-                default:
-                    return true;
+                }
             }
-            lastX = x;
-            lastY = y;
-            mLastPressure = pressure;
+
+            lastX = event.getX();
+            lastY = event.getY();
             invalidate();
             return true;
+        }
 
+        private float calculateStrokeWidth(float pressure) {
+            float minPressure = 0.1f; // 최소 필압 값
+            float maxPressure = 1.0f; // 최대 필압 값
+            float minStrokeWidth = 2.0f; // 최소 선의 두께
+            float maxStrokeWidth = 20.0f; // 최대 선의 두께
+
+            // 필압 값의 범위를 선의 두께 값의 범위에 매핑합니다.
+            float normalizedPressure = Math.max(minPressure, Math.min(maxPressure, pressure));
+            float normalizedStrokeWidth = ((normalizedPressure - minPressure) / (maxPressure - minPressure)) * (maxStrokeWidth - minStrokeWidth) + minStrokeWidth;
+
+            return normalizedStrokeWidth;
+        }
+
+
+        public Bitmap getCanvasBitmap() {
+            Bitmap canvasBitmap = Bitmap.createBitmap(canvasView.getWidth(), canvasView.getHeight(), Bitmap.Config.ARGB_8888);
+            Canvas tempCanvas = new Canvas(canvasBitmap);
+            canvasView.draw(tempCanvas);
+            return canvasBitmap;
         }
 
     }
